@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: quizclash-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Use gunicorn with gthread worker for Flask-SocketIO (threading async mode).
+    # Do NOT use gevent/eventlet workers — they conflict with python-socketio threading mode.
+    startCommand: gunicorn --worker-class gthread --threads 100 --bind 0.0.0.0:$PORT app:app
+    healthCheckPath: /api/health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false          # Set this manually in the Render dashboard — never commit the value
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
+      - key: FRONTEND_ORIGIN
+        sync: false          # Set to your Vercel URL, e.g. https://your-app.vercel.app
+      - key: SOCKET_CORS_ORIGINS
+        sync: false          # Same Vercel URL
+      - key: DB_PATH
+        value: /var/data/quizclash.db  # Requires a persistent disk mounted at /var/data

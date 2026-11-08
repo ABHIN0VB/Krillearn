@@ -211,10 +211,15 @@ def llm_generate_questions(pages, count, difficulty='mixed'):
         'mixed': 'Include a balanced mix of easy definitions, conceptual questions, and reasoning/numerical questions if appropriate.'
     }.get(difficulty, 'Include a balanced mix of questions.')
 
-    prompt = f'''Create exactly {count} high-quality quiz questions from ONLY the source text below.
+    prompt = f'''Create exactly {count} high-priority, high-yield quiz questions from ONLY the source text below.
+PRIORITY REQUIREMENT:
+- Identify and extract the MOST IMPORTANT and fundamental concepts, key definitions, core formulas, essential mechanisms, and critical takeaways from the material.
+- If the source material contains multiple-choice questions (MCQs), practice questions, review quizzes, or highlighted exercises, PRIORITIZE converting and including those exact high-importance questions into the rounds.
+- Focus on concepts most likely to be tested on an exam or core to understanding the topic. Avoid trivial trivia, dates, slide header text, or minor parenthetical remarks.
+
 DIFFICULTY GUIDELINE: {difficulty_instructions}
 
-Each answer must be one word or a short technical term (roughly 1-4 words, or a number/numerical value). Questions must be unambiguous and answerable from the source. Do not create multiple-choice questions.
+Each answer must be one word or a short technical term (roughly 1-4 words, or a number/numerical value). Questions must be unambiguous and answerable from the source. Do not create multiple-choice questions in the final output (provide direct short-answer target answers so players can type them).
 
 For each question, assign:
 - "difficulty": one of "easy", "medium", "hard", "numerical"
@@ -704,7 +709,7 @@ def health():
     gemini_key = os.getenv('GEMINI_API_KEY')
     return jsonify({
         'ok': True,
-        'service': 'QuizZedUp API',
+        'service': 'Krillearn API',
         'ai_configured': bool(gemini_key),
         'ai_provider': 'gemini' if gemini_key else None,
         'model': os.getenv('GEMINI_MODEL', 'gemini-3.5-flash') if gemini_key else None,

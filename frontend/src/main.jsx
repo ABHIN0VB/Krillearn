@@ -459,13 +459,13 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <button className="brand" onClick={reset}>
-          <span className="brand-mark">Q</span>
+          <span className="brand-mark">K</span>
           <span>
-            quiz<span className="brand-accent">zedup</span>
+            kril<span className="brand-accent">learn</span>
           </span>
         </button>
         <div className="top-meta">
-          <span className="live-dot" /> REAL-TIME STUDY ARENA
+          <span className="live-dot" /> REAL-TIME LEARNING ARENA
         </div>
       </header>
 
@@ -488,11 +488,11 @@ function App() {
                 <span className="eyebrow-line" /> YOUR NOTES. YOUR FRIENDS. YOUR GLORY.
               </div>
               <h1>
-                Study hard.<br />
-                <span className="gradient-text">Answer faster.</span>
+                Learn smarter.<br />
+                <span className="gradient-text">Win together.</span>
               </h1>
               <p className="hero-copy">
-                Turn your lecture PDFs and slides into a live quiz battle. Invite friends, race the clock, and climb the live leaderboard with automatic round flow.
+                Upload your lecture PDFs or slides — Krillearn's AI picks the most important questions and turns them into a live multiplayer quiz battle.
               </p>
               <div className="hero-actions">
                 <button
@@ -1137,7 +1137,7 @@ function App() {
       </main>
 
       <footer>
-        <span>QUIZZEDUP © 2026</span>
+        <span>KRILLEARN © 2026</span>
         <span>POWERED BY GOOGLE GEMINI AI <b>✦</b></span>
       </footer>
     </div>

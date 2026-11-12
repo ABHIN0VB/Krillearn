@@ -211,15 +211,19 @@ def llm_generate_questions(pages, count, difficulty='mixed'):
         'mixed': 'Include a balanced mix of easy definitions, conceptual questions, and reasoning/numerical questions if appropriate.'
     }.get(difficulty, 'Include a balanced mix of questions.')
 
-    prompt = f'''Create exactly {count} high-priority, high-yield quiz questions from ONLY the source text below.
+    prompt = f'''Create exactly {count} high-priority, high-yield Multiple Choice Questions (MCQs) from ONLY the source text below.
 PRIORITY REQUIREMENT:
 - Identify and extract the MOST IMPORTANT and fundamental concepts, key definitions, core formulas, essential mechanisms, and critical takeaways from the material.
 - If the source material contains multiple-choice questions (MCQs), practice questions, review quizzes, or highlighted exercises, PRIORITIZE converting and including those exact high-importance questions into the rounds.
 - Focus on concepts most likely to be tested on an exam or core to understanding the topic. Avoid trivial trivia, dates, slide header text, or minor parenthetical remarks.
 
-DIFFICULTY GUIDELINE: {difficulty_instructions}
+MCQ FORMAT REQUIREMENT:
+- Each question MUST have exactly 4 distinct options provided in an "options" array.
+- Exactly one of the options must be the correct answer ("answer").
+- The other 3 options must be plausible, competitive distractors derived from the source subject matter.
+- "answer" must match one of the items in "options" exactly.
 
-Each answer must be one word or a short technical term (roughly 1-4 words, or a number/numerical value). Questions must be unambiguous and answerable from the source. Do not create multiple-choice questions in the final output (provide direct short-answer target answers so players can type them).
+DIFFICULTY GUIDELINE: {difficulty_instructions}
 
 For each question, assign:
 - "difficulty": one of "easy", "medium", "hard", "numerical"
@@ -230,9 +234,9 @@ For each question, assign:
     * "calculation" (45s) - numerical calculations or formula application
 
 Return ONLY valid JSON as an object with a "questions" key containing an array of objects with keys:
-question, answer, accepted_answers (array of strings), explanation, source, difficulty, time_tier.
+question, options (array of exactly 4 strings), answer (string matching one option), explanation, source, difficulty, time_tier.
 
-The source field must use a page/slide label present in the text. Avoid duplicate questions. For acronyms, include common expanded forms or acronym letters in accepted_answers where appropriate.
+The source field must use a page/slide label present in the text. Avoid duplicate questions.
 
 SOURCE:
 {source}
@@ -298,14 +302,36 @@ Return ONLY valid JSON with no extraneous text.'''
         for q in raw_questions:
             question = str(q.get('question', '')).strip()
             answer = str(q.get('answer', '')).strip()
-            if not question or not answer or len(answer) > 80:
+            if not question or not answer or len(answer) > 120:
                 continue
-            accepted = q.get('accepted_answers') or []
-            if not isinstance(accepted, list):
-                accepted = []
-            accepted = [answer] + [str(x).strip() for x in accepted if str(x).strip()]
 
-            # Acronym enrichment
+            raw_options = q.get('options')
+            if not isinstance(raw_options, list):
+                raw_options = []
+            options = [str(opt).strip() for opt in raw_options if str(opt).strip()]
+
+            # Ensure answer is in options
+            if answer not in options:
+                options.insert(0, answer)
+
+            # Deduplicate while preserving order
+            seen_opts = set()
+            unique_opts = []
+            for opt in options:
+                if opt.lower() not in seen_opts:
+                    seen_opts.add(opt.lower())
+                    unique_opts.append(opt)
+
+            # Ensure exactly 4 options
+            while len(unique_opts) < 4:
+                filler = f"None of the above ({len(unique_opts) + 1})"
+                unique_opts.append(filler)
+            unique_opts = unique_opts[:4]
+
+            # Shuffle options so correct answer isn't always in same position
+            random.shuffle(unique_opts)
+
+            accepted = [answer]
             for acr in generate_acronyms(answer):
                 if acr.upper() not in accepted:
                     accepted.append(acr.upper())
@@ -322,6 +348,7 @@ Return ONLY valid JSON with no extraneous text.'''
 
             cleaned.append({
                 'question': question,
+                'options': unique_opts,
                 'answer': answer,
                 'accepted_answers': list(dict.fromkeys(accepted)),
                 'explanation': str(q.get('explanation', '')).strip(),
@@ -343,6 +370,9 @@ def fallback_generate_questions(pages, count, difficulty='mixed'):
         re.compile(r'^\s*([A-Za-z][A-Za-z0-9 ()/+-]{1,55}?)\s+(?:is|are|refers to|means)\s+(.{12,180})[.!]?\s*$', re.I),
         re.compile(r'^\s*([A-Za-z][A-Za-z0-9 ()/+-]{1,45}?)\s*[:—-]\s*(.{15,180})\s*$')
     ]
+    all_terms = [m.group(1).strip(' .,:;') for p in pages for line in re.split(r'[\n•]+', p['text']) for m in [next((p.match(line.strip(' -\t')) for p in patterns if p.match(line.strip(' -\t'))), None)] if m]
+    all_terms = list(dict.fromkeys(all_terms))
+
     for page in pages:
         for line in re.split(r'[\n•]+', page['text']):
             line = re.sub(r'\s+', ' ', line).strip(' -\t')
@@ -359,8 +389,18 @@ def fallback_generate_questions(pages, count, difficulty='mixed'):
             for acr in generate_acronyms(term):
                 if acr.upper() not in acc:
                     acc.append(acr.upper())
+
+            # Distractors for fallback MCQs
+            distractors = [t for t in all_terms if t.lower() != term.lower()]
+            random.shuffle(distractors)
+            opts = [term] + distractors[:3]
+            while len(opts) < 4:
+                opts.append(f"Option {chr(65 + len(opts))}")
+            random.shuffle(opts)
+
             candidates.append({
                 'question': f"Which term is described as: {definition}?",
+                'options': opts,
                 'answer': term,
                 'accepted_answers': acc,
                 'explanation': definition,
@@ -457,6 +497,7 @@ def public_question(room):
         'index': idx,
         'total': len(room['questions']),
         'question': q['question'],
+        'options': q.get('options', []),
         'source': q.get('source', ''),
         'deadline': room.get('deadline'),
         'seconds': q.get('seconds', room['settings']['seconds_per_question']),
@@ -550,6 +591,7 @@ def finish_question(code):
             'is_last_in_round': r_info['is_last_in_round'],
             'is_last_round': r_info['is_last_round'],
             'answer': q['answer'],
+            'options': q.get('options', []),
             'accepted_answers': q.get('accepted_answers', [q['answer']]),
             'explanation': q.get('explanation', ''),
             'source': q.get('source', ''),
@@ -816,6 +858,14 @@ def create_room():
             continue
         answer = str(q['answer']).strip()[:100]
         accepted = q.get('accepted_answers') if isinstance(q.get('accepted_answers'), list) else []
+        options = q.get('options') if isinstance(q.get('options'), list) else []
+        clean_opts = [str(opt).strip()[:100] for opt in options if str(opt).strip()]
+        if answer not in clean_opts:
+            clean_opts.insert(0, answer)
+        while len(clean_opts) < 4:
+            clean_opts.append(f"Option {chr(65 + len(clean_opts))}")
+        clean_opts = clean_opts[:4]
+
         tier = str(q.get('time_tier', 'standard')).strip().lower()
         if tier not in TIER_SECONDS:
             tier = 'standard'
@@ -826,6 +876,7 @@ def create_room():
 
         safe_questions.append({
             'question': str(q['question']).strip()[:500],
+            'options': clean_opts,
             'answer': answer,
             'accepted_answers': list(dict.fromkeys(
                 [answer] + [str(x).strip()[:100] for x in accepted if str(x).strip()]
@@ -974,9 +1025,9 @@ def on_submit_answer(data):
         if not player or player.get('sid') != request.sid:
             emit('answer_ack', {'accepted': False, 'message': 'Your player session is not valid.'})
             return
-        # If player already locked in a CORRECT answer, do not accept further answers
-        if player.get('last_submission') is not None and player['last_submission'].get('correct'):
-            emit('answer_ack', {'accepted': False, 'message': 'You have already locked in the correct answer!'})
+        # Strict single-lock: once submitted, option is locked with NO retries
+        if player.get('last_submission') is not None:
+            emit('answer_ack', {'accepted': False, 'message': 'You have already locked in your answer.'})
             return
         now = time.time()
         if now > room['deadline']:
@@ -985,56 +1036,40 @@ def on_submit_answer(data):
 
         q = room['questions'][room['question_index']]
         is_correct = is_answer_correct(answer, q['answer'], q.get('accepted_answers'))
-        player['attempt_count'] = player.get('attempt_count', 0) + 1
         elapsed = max(0.0, now - room['question_started_at'])
         q_seconds = q.get('seconds') or room['settings']['seconds_per_question']
 
-        if is_correct:
-            points = score_for(True, elapsed, q_seconds)
-            player['score'] += points
-            player['last_question_points'] = points
-            player['last_submission'] = {
-                'answer': answer.strip(),
-                'correct': True,
-                'elapsed': elapsed,
-                'points_earned': points,
-                'attempt_count': player['attempt_count']
-            }
-            ack = {
-                'accepted': True,
-                'correct': True,
-                'points_earned': points,
-                'submitted': True,
-                'message': 'Correct answer locked in!'
-            }
-        else:
-            # Multi-attempt: Wrong answer gives inline warning, allows retrying until timer expires
-            player['last_submission'] = {
-                'answer': answer.strip(),
-                'correct': False,
-                'elapsed': elapsed,
-                'points_earned': 0,
-                'attempt_count': player['attempt_count']
-            }
-            ack = {
-                'accepted': True,
-                'correct': False,
-                'points_earned': 0,
-                'submitted': False,
-                'message': 'No match — try again!'
-            }
+        # Speed-based points: fastest to lock the correct option wins top score
+        points = score_for(is_correct, elapsed, q_seconds) if is_correct else 0
+        player['score'] += points
+        player['last_question_points'] = points
+        player['last_submission'] = {
+            'answer': answer.strip(),
+            'correct': is_correct,
+            'elapsed': elapsed,
+            'points_earned': points,
+            'attempt_count': 1
+        }
 
-        # Check if all connected players have solved the question correctly
-        all_solved = all(
-            p.get('last_submission') is not None and p['last_submission'].get('correct')
+        ack = {
+            'accepted': True,
+            'correct': is_correct,
+            'points_earned': points,
+            'submitted': True,
+            'selected_option': answer.strip(),
+            'message': 'Answer locked in!'
+        }
+
+        # Check if all connected players have submitted an answer
+        all_answered = all(
+            p.get('last_submission') is not None
             for p in room['players'].values() if p['connected']
         )
 
     emit('answer_ack', ack)
-    if is_correct:
-        socketio.emit('player_answered', {'player_id': player_id, 'nickname': player['nickname']}, to=code, skip_sid=request.sid)
-        socketio.emit('leaderboard_update', {'players': public_players(room)}, to=code)
-    if all_solved:
+    socketio.emit('player_answered', {'player_id': player_id, 'nickname': player['nickname']}, to=code, skip_sid=request.sid)
+    socketio.emit('leaderboard_update', {'players': public_players(room)}, to=code)
+    if all_answered:
         finish_question(code)
 
 

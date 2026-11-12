@@ -284,15 +284,11 @@ function App() {
 
     const onAck = (d) => {
       setAck(d);
-      if (d.accepted && d.correct) {
+      if (d.accepted) {
         setAnswerSent(true);
         setAttemptError('');
-      } else if (d.accepted && !d.correct) {
-        // Wrong attempt: keep input enabled, clear text, show retry warning
-        setAnswerSent(false);
-        setAttemptError(d.message || 'No match — try again!');
-        setAnswer('');
-        setTimeout(() => answerRef.current?.focus(), 50);
+      } else {
+        setError(d.message || 'Could not submit answer.');
       }
     };
 
@@ -415,10 +411,11 @@ function App() {
     socket.emit('host_start_game', { code: room.code, host_token: hostToken });
   }
 
-  function submitAnswer(e) {
-    e?.preventDefault();
-    if (!answer.trim() || answerSent || gameStatus !== 'question') return;
-    socket.emit('submit_answer', { code: room.code, player_id: playerId, answer: answer.trim() });
+  function selectOption(opt) {
+    if (answerSent || gameStatus !== 'question' || timeLeft <= 0) return;
+    setAnswer(opt);
+    setAnswerSent(true);
+    socket.emit('submit_answer', { code: room.code, player_id: playerId, answer: opt });
   }
 
   function playAgain() {
@@ -906,53 +903,43 @@ function App() {
                   <h2 className="live-question-text">{question.question}</h2>
 
                   <p className="answer-hint">
-                    {isHost
-                      ? 'You are the host, but you can answer too! Rapid typing and typos are supported.'
-                      : 'Type your answer and press Enter. Typos and acronyms are accepted!'}
+                    {answerSent
+                      ? 'Option locked! The fastest correct pick wins top score.'
+                      : 'Lock in your answer! No retries — speed counts!'}
                   </p>
 
-                  <form className="answer-form" onSubmit={submitAnswer}>
-                    <input
-                      ref={answerRef}
-                      className={`answer-input ${attemptError ? 'shake' : ''}`}
-                      autoComplete="off"
-                      disabled={answerSent || timeLeft <= 0}
-                      placeholder={
-                        answerSent
-                          ? '✓ Answer locked in!'
-                          : attemptError
-                          ? 'Try again…'
-                          : 'Type your answer…'
-                      }
-                      value={answer}
-                      onChange={(e) => {
-                        setAnswer(e.target.value);
-                        if (attemptError) setAttemptError('');
-                      }}
-                    />
-                    <button
-                      className="button primary"
-                      disabled={answerSent || !answer.trim() || timeLeft <= 0}
-                    >
-                      {answerSent ? 'Locked In' : 'Submit ↗'}
-                    </button>
-                  </form>
+                  {/* 4 MCQ Option Cards */}
+                  <div className="mcq-options-grid">
+                    {(question.options || []).map((opt, idx) => {
+                      const letter = String.fromCharCode(65 + idx);
+                      const isSelected = answer === opt;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          className={`mcq-option-btn ${isSelected ? 'selected' : ''}`}
+                          disabled={answerSent || timeLeft <= 0}
+                          onClick={() => selectOption(opt)}
+                        >
+                          <span className="mcq-letter">{letter}</span>
+                          <span className="mcq-text">{opt}</span>
+                          {isSelected && <span className="mcq-check">🔒 LOCKED</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                  {attemptError && !answerSent && (
-                    <div className="retry-warning">
-                      <span>⚠</span> {attemptError}
+                  {answerSent && ack && (
+                    <div className={`submitted-note ${ack.correct ? 'correct' : 'incorrect'}`}>
+                      {ack.correct
+                        ? `✓ Locked in: "${ack.selected_option || answer}" (+${ack.points_earned} pts)`
+                        : `✗ Locked in: "${ack.selected_option || answer}" (Incorrect)`}
                     </div>
                   )}
 
-                  {answerSent && ack && ack.correct && (
-                    <div className="submitted-note correct">
-                      ✓ Correct! +{ack.points_earned} points locked in
-                    </div>
-                  )}
-
-                  {!answerSent && !attemptError && (
+                  {!answerSent && (
                     <div className="live-tip">
-                      ⚡ Type as many attempts as needed until the clock expires!
+                      ⚡ Fastest correct lock-in earns up to 1,000 points! Choose carefully: 1 attempt only.
                     </div>
                   )}
                 </div>
@@ -985,6 +972,46 @@ function App() {
                     </span>
                   </div>
 
+                  {/* Options breakdown */}
+                  {reveal.options && reveal.options.length > 0 && (
+                    <div className="reveal-options-grid">
+                      {reveal.options.map((opt, idx) => {
+                        const letter = String.fromCharCode(65 + idx);
+                        const isCorrect = opt.trim().toLowerCase() === reveal.answer.trim().toLowerCase();
+                        // Find players who picked this option
+                        const chosenBy = (reveal.results || []).filter(
+                          (r) => (r.answer || '').trim().toLowerCase() === opt.trim().toLowerCase()
+                        );
+                        return (
+                          <div
+                            key={idx}
+                            className={`reveal-opt-card ${isCorrect ? 'is-correct' : ''}`}
+                          >
+                            <div className="reveal-opt-header">
+                              <span className="reveal-opt-letter">{letter}</span>
+                              <span className="reveal-opt-text">{opt}</span>
+                              {isCorrect && <span className="correct-badge">✓ CORRECT</span>}
+                            </div>
+                            <div className="reveal-chosen-list">
+                              {chosenBy.length > 0 ? (
+                                chosenBy.map((p) => (
+                                  <span
+                                    key={p.player_id}
+                                    className={`chosen-pill ${p.player_id === playerId ? 'is-me' : ''}`}
+                                  >
+                                    {p.nickname} {p.elapsed ? `(${p.elapsed}s)` : ''}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="no-pick">0 players</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {/* Question Results: Answers submitted */}
                   <div className="round-results">
                     <h3>Submissions for this question</h3>
@@ -998,10 +1025,10 @@ function App() {
                           {r.nickname}
                           <small>
                             {r.correct
-                              ? `Correct in ${r.elapsed}s`
+                              ? `✓ Locked correct option in ${r.elapsed}s`
                               : r.answer
-                              ? `Answered: "${r.answer}"`
-                              : 'No answer submitted'}
+                              ? `✗ Picked "${r.answer}" in ${r.elapsed}s`
+                              : 'No option chosen'}
                           </small>
                         </span>
                         <strong className={r.points_earned ? 'points-positive' : ''}>

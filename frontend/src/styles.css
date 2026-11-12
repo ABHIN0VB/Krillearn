@@ -563,6 +563,169 @@ footer {
 footer b { color: #c4b5fd; }
 .alert + .hero { margin-top: 0; }
 
+/* ── MCQ Options Grid ─────────────────────────────────────────────────────── */
+.mcq-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 22px 0 16px;
+}
+
+.mcq-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #171626;
+  border: 2px solid #2e2c44;
+  border-radius: 14px;
+  padding: 16px 18px;
+  color: #f1f0fb;
+  text-align: left;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  position: relative;
+}
+
+.mcq-option-btn:not(:disabled):hover {
+  background: #212036;
+  border-color: #a78bfa;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(167, 139, 250, 0.15);
+}
+
+.mcq-option-btn:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.mcq-option-btn.selected {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.22), rgba(240, 171, 252, 0.1));
+  border-color: #c4b5fd;
+  box-shadow: 0 0 20px rgba(167, 139, 250, 0.3);
+}
+
+.mcq-letter {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #252438;
+  color: #a78bfa;
+  font: 700 14px 'DM Mono', monospace;
+  border: 1px solid #3c3958;
+}
+
+.mcq-option-btn.selected .mcq-letter {
+  background: #a78bfa;
+  color: #0c0c14;
+}
+
+.mcq-text {
+  flex: 1;
+  line-height: 1.45;
+}
+
+.mcq-check {
+  font: 700 11px 'DM Mono', monospace;
+  background: #a78bfa;
+  color: #0c0c14;
+  padding: 4px 8px;
+  border-radius: 6px;
+  letter-spacing: 1px;
+}
+
+/* ── Reveal Options Grid ─────────────────────────────────────────────────── */
+.reveal-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 22px 0 16px;
+  text-align: left;
+}
+
+.reveal-opt-card {
+  background: #151522;
+  border: 1px solid #2a293d;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reveal-opt-card.is-correct {
+  background: rgba(94, 227, 179, 0.1);
+  border: 1.5px solid #5ee3b3;
+}
+
+.reveal-opt-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.reveal-opt-letter {
+  font: 700 13px 'DM Mono', monospace;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  background: #222133;
+  border-radius: 6px;
+  color: #c4b5fd;
+}
+
+.reveal-opt-card.is-correct .reveal-opt-letter {
+  background: #5ee3b3;
+  color: #0c0c14;
+}
+
+.reveal-opt-text {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.correct-badge {
+  font: 700 10px 'DM Mono', monospace;
+  color: #5ee3b3;
+  background: rgba(94, 227, 179, 0.2);
+  border: 1px solid #5ee3b3;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.reveal-chosen-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.chosen-pill {
+  font: 600 11px 'DM Mono', monospace;
+  background: #262438;
+  color: #e2e8f0;
+  border: 1px solid #3c3a54;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.chosen-pill.is-me {
+  background: #a78bfa2e;
+  border-color: #a78bfa;
+  color: #f5d0fe;
+}
+
+.no-pick {
+  font: 11px 'DM Mono', monospace;
+  color: #646279;
+}
+
 /* ── Multi-Attempt & Question Badges ─────────────────────────────────────── */
 .question-tier-badges {
   display: flex;

@@ -128,6 +128,7 @@ function App() {
   const [file, setFile] = useState(null);
   const [questionCount, setQuestionCount] = useState(10);
   const [difficulty, setDifficulty] = useState('mixed');
+  const [questionType, setQuestionType] = useState('mcq'); // 'mcq' or 'one_word'
   const [seconds, setSeconds] = useState(15);
   const [questionsPerRound, setQuestionsPerRound] = useState(5);
   const [generationMode, setGenerationMode] = useState('');
@@ -348,6 +349,7 @@ function App() {
       body.append('file', file);
       body.append('question_count', String(questionCount));
       body.append('difficulty', difficulty);
+      body.append('question_type', questionType);
       const response = await fetch(`${API}/api/questions/generate`, { method: 'POST', body });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Question generation failed.');
@@ -416,6 +418,13 @@ function App() {
     setAnswer(opt);
     setAnswerSent(true);
     socket.emit('submit_answer', { code: room.code, player_id: playerId, answer: opt });
+  }
+
+  function submitOneWordAnswer(e) {
+    e?.preventDefault();
+    if (!answer.trim() || answerSent || gameStatus !== 'question' || timeLeft <= 0) return;
+    setAnswerSent(true);
+    socket.emit('submit_answer', { code: room.code, player_id: playerId, answer: answer.trim() });
   }
 
   function playAgain() {
@@ -595,6 +604,18 @@ function App() {
 
               <div className="settings-grid">
                 <div>
+                  <label className="field-label">Question type</label>
+                  <select
+                    className="text-input"
+                    value={questionType}
+                    onChange={(e) => setQuestionType(e.target.value)}
+                  >
+                    <option value="mcq">Multiple Choice (4 Options)</option>
+                    <option value="one_word">One Word / Short Answer</option>
+                  </select>
+                </div>
+
+                <div>
                   <label className="field-label">Questions to generate</label>
                   <select
                     className="text-input"
@@ -608,7 +629,9 @@ function App() {
                     ))}
                   </select>
                 </div>
+              </div>
 
+              <div className="settings-grid">
                 <div>
                   <label className="field-label">Question difficulty</label>
                   <select
@@ -623,9 +646,7 @@ function App() {
                     <option value="numerical">Numerical (Math & calculations)</option>
                   </select>
                 </div>
-              </div>
 
-              <div className="settings-grid">
                 <div>
                   <label className="field-label">Default fallback timer</label>
                   <select
@@ -640,7 +661,9 @@ function App() {
                     ))}
                   </select>
                 </div>
+              </div>
 
+              <div className="settings-grid">
                 <div>
                   <label className="field-label">Questions per round</label>
                   <select
@@ -654,6 +677,12 @@ function App() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div className="config-hint-box">
+                  <span className="config-hint-label">Round progression</span>
+                  <p className="config-hint-text">
+                    5s question leaderboard · 10s round break · Automatic synchronization
+                  </p>
                 </div>
               </div>
 
@@ -902,32 +931,63 @@ function App() {
 
                   <h2 className="live-question-text">{question.question}</h2>
 
-                  <p className="answer-hint">
-                    {answerSent
-                      ? 'Option locked! The fastest correct pick wins top score.'
-                      : 'Lock in your answer! No retries — speed counts!'}
-                  </p>
+                  {/* MCQ Question Mode */}
+                  {question.options && question.options.length > 0 ? (
+                    <>
+                      <p className="answer-hint">
+                        {answerSent
+                          ? 'Option locked! The fastest correct pick wins top score.'
+                          : 'Lock in your answer! No retries — speed counts!'}
+                      </p>
 
-                  {/* 4 MCQ Option Cards */}
-                  <div className="mcq-options-grid">
-                    {(question.options || []).map((opt, idx) => {
-                      const letter = String.fromCharCode(65 + idx);
-                      const isSelected = answer === opt;
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
-                          className={`mcq-option-btn ${isSelected ? 'selected' : ''}`}
+                      <div className="mcq-options-grid">
+                        {question.options.map((opt, idx) => {
+                          const letter = String.fromCharCode(65 + idx);
+                          const isSelected = answer === opt;
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              className={`mcq-option-btn ${isSelected ? 'selected' : ''}`}
+                              disabled={answerSent || timeLeft <= 0}
+                              onClick={() => selectOption(opt)}
+                            >
+                              <span className="mcq-letter">{letter}</span>
+                              <span className="mcq-text">{opt}</span>
+                              {isSelected && <span className="mcq-check">🔒 LOCKED</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    /* One Word / Short Answer Mode */
+                    <>
+                      <p className="answer-hint">
+                        {answerSent
+                          ? 'Answer submitted! Waiting for deadline…'
+                          : 'Type the shortest technical term and press Enter or click Lock.'}
+                      </p>
+
+                      <form className="answer-form" onSubmit={submitOneWordAnswer}>
+                        <input
+                          ref={answerRef}
+                          className="answer-input"
+                          autoComplete="off"
                           disabled={answerSent || timeLeft <= 0}
-                          onClick={() => selectOption(opt)}
+                          placeholder={answerSent ? '✓ Answer locked in!' : 'Type your answer…'}
+                          value={answer}
+                          onChange={(e) => setAnswer(e.target.value)}
+                        />
+                        <button
+                          className="button primary"
+                          disabled={answerSent || !answer.trim() || timeLeft <= 0}
                         >
-                          <span className="mcq-letter">{letter}</span>
-                          <span className="mcq-text">{opt}</span>
-                          {isSelected && <span className="mcq-check">🔒 LOCKED</span>}
+                          {answerSent ? 'Locked' : 'Lock Answer ↗'}
                         </button>
-                      );
-                    })}
-                  </div>
+                      </form>
+                    </>
+                  )}
 
                   {answerSent && ack && (
                     <div className={`submitted-note ${ack.correct ? 'correct' : 'incorrect'}`}>

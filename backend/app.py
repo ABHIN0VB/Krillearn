@@ -186,7 +186,7 @@ def extract_document(path):
     raise RuntimeError('Upload a PDF or PowerPoint .pptx file.')
 
 
-def llm_generate_questions(pages, count, difficulty='mixed'):
+def llm_generate_questions(pages, count, difficulty='mixed', question_type='mcq'):
     """Generate questions using Google Gemini AI, supporting both google.genai and google.generativeai."""
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
@@ -211,19 +211,32 @@ def llm_generate_questions(pages, count, difficulty='mixed'):
         'mixed': 'Include a balanced mix of easy definitions, conceptual questions, and reasoning/numerical questions if appropriate.'
     }.get(difficulty, 'Include a balanced mix of questions.')
 
-    prompt = f'''Create exactly {count} high-priority, high-yield Multiple Choice Questions (MCQs) from ONLY the source text below.
+    if question_type == 'mcq':
+        format_spec = '''MCQ FORMAT REQUIREMENT:
+- Every question MUST be a Multiple Choice Question (MCQ) with an "options" array of exactly 4 choices.
+- Exactly one of the options must be the correct answer ("answer").
+- The other 3 options must be plausible, competitive distractors derived from the source subject matter.
+- "answer" must match one of the items in "options" exactly.
+- Return "type": "mcq" in each question object.'''
+        keys_desc = 'question, options (array of exactly 4 strings), answer (string matching one option), explanation, source, difficulty, time_tier, type ("mcq")'
+    else:
+        format_spec = '''ONE-WORD / SHORT-ANSWER FORMAT REQUIREMENT:
+- Every question MUST be a short-answer or one-word technical term (roughly 1-4 words or a numerical value).
+- Do not provide multiple choice options. "options" must be an empty array [].
+- "answer" must be the precise target answer.
+- Provide common alternative spellings or acronym expansions in accepted_answers array.
+- Return "type": "one_word" in each question object.'''
+        keys_desc = 'question, options ([]), answer (string), accepted_answers (array of strings), explanation, source, difficulty, time_tier, type ("one_word")'
+
+    prompt = f'''Create exactly {count} high-priority, high-yield quiz questions from ONLY the source text below.
 PRIORITY REQUIREMENT:
 - Identify and extract the MOST IMPORTANT and fundamental concepts, key definitions, core formulas, essential mechanisms, and critical takeaways from the material.
 - If the source material contains multiple-choice questions (MCQs), practice questions, review quizzes, or highlighted exercises, PRIORITIZE converting and including those exact high-importance questions into the rounds.
 - Focus on concepts most likely to be tested on an exam or core to understanding the topic. Avoid trivial trivia, dates, slide header text, or minor parenthetical remarks.
 
-MCQ FORMAT REQUIREMENT:
-- Each question MUST have exactly 4 distinct options provided in an "options" array.
-- Exactly one of the options must be the correct answer ("answer").
-- The other 3 options must be plausible, competitive distractors derived from the source subject matter.
-- "answer" must match one of the items in "options" exactly.
-
 DIFFICULTY GUIDELINE: {difficulty_instructions}
+
+{format_spec}
 
 For each question, assign:
 - "difficulty": one of "easy", "medium", "hard", "numerical"
@@ -234,7 +247,7 @@ For each question, assign:
     * "calculation" (45s) - numerical calculations or formula application
 
 Return ONLY valid JSON as an object with a "questions" key containing an array of objects with keys:
-question, options (array of exactly 4 strings), answer (string matching one option), explanation, source, difficulty, time_tier.
+{keys_desc}.
 
 The source field must use a page/slide label present in the text. Avoid duplicate questions.
 
@@ -305,36 +318,47 @@ Return ONLY valid JSON with no extraneous text.'''
             if not question or not answer or len(answer) > 120:
                 continue
 
-            raw_options = q.get('options')
-            if not isinstance(raw_options, list):
-                raw_options = []
-            options = [str(opt).strip() for opt in raw_options if str(opt).strip()]
+            q_mode = 'mcq' if question_type == 'mcq' else 'one_word'
 
-            # Ensure answer is in options
-            if answer not in options:
-                options.insert(0, answer)
+            if q_mode == 'mcq':
+                raw_options = q.get('options')
+                if not isinstance(raw_options, list):
+                    raw_options = []
+                options = [str(opt).strip() for opt in raw_options if str(opt).strip()]
 
-            # Deduplicate while preserving order
-            seen_opts = set()
-            unique_opts = []
-            for opt in options:
-                if opt.lower() not in seen_opts:
-                    seen_opts.add(opt.lower())
-                    unique_opts.append(opt)
+                # Ensure answer is in options
+                if answer not in options:
+                    options.insert(0, answer)
 
-            # Ensure exactly 4 options
-            while len(unique_opts) < 4:
-                filler = f"None of the above ({len(unique_opts) + 1})"
-                unique_opts.append(filler)
-            unique_opts = unique_opts[:4]
+                # Deduplicate while preserving order
+                seen_opts = set()
+                unique_opts = []
+                for opt in options:
+                    if opt.lower() not in seen_opts:
+                        seen_opts.add(opt.lower())
+                        unique_opts.append(opt)
 
-            # Shuffle options so correct answer isn't always in same position
-            random.shuffle(unique_opts)
+                # Ensure exactly 4 options
+                while len(unique_opts) < 4:
+                    filler = f"None of the above ({len(unique_opts) + 1})"
+                    unique_opts.append(filler)
+                unique_opts = unique_opts[:4]
+                random.shuffle(unique_opts)
+            else:
+                unique_opts = []
 
             accepted = [answer]
             for acr in generate_acronyms(answer):
                 if acr.upper() not in accepted:
                     accepted.append(acr.upper())
+
+            # Additional accepted answers from prompt
+            more_accepted = q.get('accepted_answers') or []
+            if isinstance(more_accepted, list):
+                for a in more_accepted:
+                    s_a = str(a).strip()
+                    if s_a and s_a not in accepted:
+                        accepted.append(s_a)
 
             # Difficulty & Time Tier
             tier = str(q.get('time_tier', 'standard')).strip().lower()
@@ -348,6 +372,7 @@ Return ONLY valid JSON with no extraneous text.'''
 
             cleaned.append({
                 'question': question,
+                'type': q_mode,
                 'options': unique_opts,
                 'answer': answer,
                 'accepted_answers': list(dict.fromkeys(accepted)),
@@ -363,7 +388,7 @@ Return ONLY valid JSON with no extraneous text.'''
         raise RuntimeError(f'Could not parse AI response: {str(exc)}') from exc
 
 
-def fallback_generate_questions(pages, count, difficulty='mixed'):
+def fallback_generate_questions(pages, count, difficulty='mixed', question_type='mcq'):
     """Heuristic fallback when no API key is configured."""
     candidates = []
     patterns = [
@@ -390,16 +415,20 @@ def fallback_generate_questions(pages, count, difficulty='mixed'):
                 if acr.upper() not in acc:
                     acc.append(acr.upper())
 
-            # Distractors for fallback MCQs
-            distractors = [t for t in all_terms if t.lower() != term.lower()]
-            random.shuffle(distractors)
-            opts = [term] + distractors[:3]
-            while len(opts) < 4:
-                opts.append(f"Option {chr(65 + len(opts))}")
-            random.shuffle(opts)
+            if question_type == 'mcq':
+                # Distractors for fallback MCQs
+                distractors = [t for t in all_terms if t.lower() != term.lower()]
+                random.shuffle(distractors)
+                opts = [term] + distractors[:3]
+                while len(opts) < 4:
+                    opts.append(f"Option {chr(65 + len(opts))}")
+                random.shuffle(opts)
+            else:
+                opts = []
 
             candidates.append({
                 'question': f"Which term is described as: {definition}?",
+                'type': question_type,
                 'options': opts,
                 'answer': term,
                 'accepted_answers': acc,
@@ -419,13 +448,13 @@ def fallback_generate_questions(pages, count, difficulty='mixed'):
     return unique[:count]
 
 
-def generate_questions(pages, count, difficulty='mixed'):
+def generate_questions(pages, count, difficulty='mixed', question_type='mcq'):
     if os.getenv('GEMINI_API_KEY'):
-        questions = llm_generate_questions(pages, count, difficulty)
+        questions = llm_generate_questions(pages, count, difficulty, question_type)
         if not questions:
             raise RuntimeError('The AI returned no valid questions. Try fewer questions or a clearer document.')
         return questions, 'ai'
-    return fallback_generate_questions(pages, count, difficulty), 'fallback'
+    return fallback_generate_questions(pages, count, difficulty, question_type), 'fallback'
 
 
 # ── Room State & Leaderboard Helpers ─────────────────────────────────────────
@@ -497,6 +526,7 @@ def public_question(room):
         'index': idx,
         'total': len(room['questions']),
         'question': q['question'],
+        'type': q.get('type', 'mcq' if q.get('options') else 'one_word'),
         'options': q.get('options', []),
         'source': q.get('source', ''),
         'deadline': room.get('deadline'),
@@ -591,6 +621,7 @@ def finish_question(code):
             'is_last_in_round': r_info['is_last_in_round'],
             'is_last_round': r_info['is_last_round'],
             'answer': q['answer'],
+            'type': q.get('type', 'mcq' if q.get('options') else 'one_word'),
             'options': q.get('options', []),
             'accepted_answers': q.get('accepted_answers', [q['answer']]),
             'explanation': q.get('explanation', ''),
@@ -777,6 +808,9 @@ def api_generate_questions():
     difficulty = str(request.form.get('difficulty', 'mixed')).strip().lower()
     if difficulty not in ('mixed', 'easy', 'medium', 'hard', 'numerical'):
         difficulty = 'mixed'
+    question_type = str(request.form.get('question_type', 'mcq')).strip().lower()
+    if question_type not in ('mcq', 'one_word'):
+        question_type = 'mcq'
     try:
         count = max(1, min(MAX_QUESTIONS, int(count)))
     except ValueError:
@@ -790,7 +824,7 @@ def api_generate_questions():
         if not pages:
             return json_error(
                 'No selectable text was found. Scanned PDFs need OCR, which this MVP does not include yet.', 422)
-        questions, generation_mode = generate_questions(pages, count, difficulty)
+        questions, generation_mode = generate_questions(pages, count, difficulty, question_type)
         if not questions:
             return json_error(
                 'Could not generate enough questions from this file. '
@@ -800,6 +834,7 @@ def api_generate_questions():
             'questions': questions,
             'generation_mode': generation_mode,
             'difficulty': difficulty,
+            'question_type': question_type,
             'created_at': time.time()
         }
         for key, item in list(pending_question_sets.items()):
@@ -858,13 +893,17 @@ def create_room():
             continue
         answer = str(q['answer']).strip()[:100]
         accepted = q.get('accepted_answers') if isinstance(q.get('accepted_answers'), list) else []
+        q_type = str(q.get('type') or ('mcq' if q.get('options') else 'one_word'))
         options = q.get('options') if isinstance(q.get('options'), list) else []
         clean_opts = [str(opt).strip()[:100] for opt in options if str(opt).strip()]
-        if answer not in clean_opts:
-            clean_opts.insert(0, answer)
-        while len(clean_opts) < 4:
-            clean_opts.append(f"Option {chr(65 + len(clean_opts))}")
-        clean_opts = clean_opts[:4]
+        if q_type == 'mcq':
+            if answer not in clean_opts:
+                clean_opts.insert(0, answer)
+            while len(clean_opts) < 4:
+                clean_opts.append(f"Option {chr(65 + len(clean_opts))}")
+            clean_opts = clean_opts[:4]
+        else:
+            clean_opts = []
 
         tier = str(q.get('time_tier', 'standard')).strip().lower()
         if tier not in TIER_SECONDS:
@@ -876,6 +915,7 @@ def create_room():
 
         safe_questions.append({
             'question': str(q['question']).strip()[:500],
+            'type': q_type,
             'options': clean_opts,
             'answer': answer,
             'accepted_answers': list(dict.fromkeys(
